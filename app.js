@@ -171,7 +171,7 @@
   }
 
   function showPrompt() {
-    render('<button id="prompt" class="prompt" type="button">is it nice out</button>');
+    render('<button id="prompt" class="prompt" type="button">is it nice out<span class="cursor"></span></button>');
     const btn = document.getElementById('prompt');
     btn.addEventListener('click', handleClick);
     announce('');
@@ -204,9 +204,8 @@
     if (loadingTimer12s) { clearTimeout(loadingTimer12s); loadingTimer12s = null; }
   }
 
-  function showResult(answer, details, alerts, stationUrl) {
-    const isYes = answer === 'YES';
-    const isNo = answer === 'NO';
+  function showResult(answer, details, alerts, stationUrl, tableData) {
+    const isYes = answer === 'yes';
     const hasAlerts = alerts && alerts.length > 0;
 
     let html = '<div class="result" id="result">';
@@ -229,7 +228,17 @@
       html += '</div>';
     }
 
-    html += '<p class="footer">Data from the <a href="' + escapeAttr(stationUrl || 'https://www.weather.gov') + '" target="_blank" rel="noopener">National Weather Service</a>.</p>';
+    // Data table
+    if (tableData) {
+      html += '<table class="data-table">';
+      tableData.forEach(row => {
+        const cls = row.fail ? ' class="fail"' : '';
+        html += `<tr${cls}><td>${row.label}</td><td>${row.value}</td></tr>`;
+      });
+      html += '</table>';
+    }
+
+    html += '<p class="footer">data from the <a href="' + escapeAttr(stationUrl || 'https://www.weather.gov') + '" target="_blank" rel="noopener">national weather service</a></p>';
     html += '<button class="check-again" type="button">check again</button>';
     html += '</div>';
 
@@ -259,7 +268,7 @@
 
   function showIDK(subtext) {
     let html = '<div class="result" id="result">';
-    html += '<h1 class="answer-text">IDK</h1>';
+    html += '<h1 class="answer-text">idk</h1>';
     html += `<ul class="detail-lines"><li class="detail-line">${escapeHtml(subtext)}</li></ul>`;
     html += '<button class="check-again" type="button">check again</button>';
     html += '</div>';
@@ -312,7 +321,7 @@
     // Offline check
     if (!navigator.onLine) {
       clearLoadingTimers();
-      showIDK("You're offline right now.");
+      showIDK("you're offline right now");
       return;
     }
 
@@ -324,7 +333,7 @@
       lon = roundCoord(pos.coords.longitude);
     } catch (e) {
       clearLoadingTimers();
-      showIDK("I don't know where you are. You have to let me see your location.");
+      showIDK("i don't know where you are — you have to let me see your location");
       return;
     }
 
@@ -392,7 +401,7 @@
         const age = Date.now() - new Date(obsTimestamp).getTime();
         if (age > STALENESS_THRESHOLD_MS) {
           clearLoadingTimers();
-          showIDK("Weather data is stale. The station might be having issues.");
+          showIDK("weather data is stale — the station might be having issues");
           return;
         }
       }
@@ -408,9 +417,9 @@
       if (activeController.signal.aborted) return;
 
       if (e.message === 'PARSE_ERROR' || e.message.startsWith('CLIENT_ERROR_')) {
-        showIDK("Got something weird back from the weather service. Try again.");
+        showIDK("got something weird back from the weather service — try again");
       } else {
-        showIDK("The weather service is being slow. Try again in a sec.");
+        showIDK("the weather service is being slow — try again in a sec");
       }
     }
   }
@@ -432,50 +441,61 @@
   function runAlgorithm(alertsData, obsJson, stationUrl) {
     const props = obsJson.properties;
     const failures = [];
+    const tableData = [];
 
     // Null checks for required fields
     if (props.temperature == null || props.temperature.value == null) {
-      showIDK("Got something weird back from the weather service. Try again.");
+      showIDK("got something weird back from the weather service — try again");
       return;
     }
     if (props.windSpeed == null || props.windSpeed.value == null) {
-      showIDK("Got something weird back from the weather service. Try again.");
+      showIDK("got something weird back from the weather service — try again");
       return;
     }
     if (!props.textDescription) {
-      showIDK("Got something weird back from the weather service. Try again.");
+      showIDK("got something weird back from the weather service — try again");
       return;
     }
 
     // Temperature
     const tempC = props.temperature.value;
     const tempF = celsiusToFahrenheit(tempC);
+    let tempFail = false;
 
     if (tempC < TEMP_MIN_C) {
-      failures.push(`Too cold (<span class="temp-value">${tempF}°</span>).`);
+      failures.push(`too cold (${tempF}°)`);
+      tempFail = true;
     } else if (tempC > TEMP_MAX_C) {
-      failures.push(`Too hot (<span class="temp-value">${tempF}°</span>).`);
+      failures.push(`too hot (${tempF}°)`);
+      tempFail = true;
     }
+
+    tableData.push({ label: 'temp', value: `${tempF}°`, fail: tempFail });
 
     // Wind
     const windKmh = props.windSpeed.value;
     const windMph = kmhToMph(windKmh);
+    const windFail = windKmh >= WIND_MAX_KMH;
 
-    if (windKmh >= WIND_MAX_KMH) {
-      failures.push(`Way too windy (<span class="wind-value">${windMph} mph</span>).`);
+    if (windFail) {
+      failures.push(`way too windy (${windMph} mph)`);
     }
+
+    tableData.push({ label: 'wind', value: `${windMph} mph`, fail: windFail });
+
+    // Sky condition
+    const description = props.textDescription;
+    const descLower = description.toLowerCase();
+    const skyPasses = SKY_PASSLIST.some(term => descLower.includes(term));
 
     // Precipitation
     const precipVal = props.precipitationLastHour ? props.precipitationLastHour.value : null;
-    const description = props.textDescription;
-    const descLower = description.toLowerCase();
-
     let precipFailed = false;
+
     if (precipVal != null && precipVal > PRECIP_NOISE_THRESHOLD_MM) {
       precipFailed = true;
     }
     if (!precipFailed) {
-      // Secondary signal: check textDescription for precip keywords
       for (const keyword of PRECIP_KEYWORDS) {
         if (descLower.includes(keyword)) {
           precipFailed = true;
@@ -486,17 +506,17 @@
 
     if (precipFailed) {
       if (tempF <= 35) {
-        failures.push("It's snowing.");
+        failures.push("it's snowing");
       } else {
-        failures.push("It's raining.");
+        failures.push("it's raining");
       }
     }
 
-    // Sky condition
-    const skyPasses = SKY_PASSLIST.some(term => descLower.includes(term));
+    tableData.push({ label: 'sky', value: descLower, fail: !skyPasses });
+    tableData.push({ label: 'precip', value: precipFailed ? (tempF <= 35 ? 'snow' : 'rain') : 'none', fail: precipFailed });
+
     if (!skyPasses && !precipFailed) {
-      // Only show sky failure if precip didn't already capture it
-      failures.push(`Sky isn't great (${escapeHtml(description)}).`);
+      failures.push(`sky isn't great (${escapeHtml(descLower)})`);
     }
 
     // Alert evaluation
@@ -506,7 +526,7 @@
     // Extreme override
     if (extremeAlerts.length > 0) {
       extremeAlerts.forEach(a => {
-        failures.push(`There's a ${escapeHtml(a.properties.event)} right now.`);
+        failures.push(`there's a ${escapeHtml(a.properties.event.toLowerCase())} right now`);
       });
     }
 
@@ -514,11 +534,9 @@
     const isNice = failures.length === 0 && extremeAlerts.length === 0;
 
     if (isNice) {
-      // Build success detail lines
-      const skyDesc = description.toLowerCase();
       const details = [
-        `It's <span class="temp-value">${tempF}°</span> and ${escapeHtml(description.toLowerCase())}.`,
-        `Wind is <span class="wind-value">${windMph} mph</span>.`
+        `${tempF}° and ${escapeHtml(descLower)}`,
+        `wind is ${windMph} mph`
       ];
 
       const nonExtremeAlerts = qualifyingAlerts
@@ -529,9 +547,9 @@
           url: a.properties.id || a.id || '#'
         }));
 
-      showResult('YES', details, nonExtremeAlerts, stationUrl);
+      showResult('yes', details, nonExtremeAlerts, stationUrl, tableData);
     } else {
-      showResult('NO', failures, null, stationUrl);
+      showResult('no', failures, null, stationUrl, tableData);
     }
   }
 
