@@ -186,13 +186,13 @@ p, li, ul {
 /* --- Answer Word --- */
 .answer-text {
   font-family: "Bebas Neue", sans-serif;
-  font-size: clamp(5rem, 15vw, 10rem);
+  font-size: clamp(10rem, 35vw, 20rem);
   font-weight: 400;
   text-transform: lowercase;
-  line-height: 0.9;
+  line-height: 0.8;
   letter-spacing: 0.02em;
   color: var(--answer-color);
-  margin-bottom: clamp(1rem, 3vw, 2rem);
+  margin-bottom: 0.5rem;
 }
 
 /* --- Detail Lines (editorial quips) --- */
@@ -200,8 +200,8 @@ p, li, ul {
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
-  margin-bottom: 2rem;
+  gap: 0.3rem;
+  margin-bottom: 1.5rem;
 }
 
 .detail-line {
